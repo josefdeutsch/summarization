@@ -424,3 +424,22 @@ def grade(sample, item):
 8. Test 8 — Soft Overlap Quality (>= 0.8 for N-1)
 
 This isolates format, schema, config, range, and overlap issues step by step.
+---
+
+## 9) Practical implementation notes (from prior review)
+
+Strengths of this framework:
+- Deterministic float-only contract (`1.0`/`0.0`) reduces integration ambiguity.
+- Clear `sample` vs `item` separation helps isolate model-output vs dataset-config issues.
+- The 8-step debug split is ordered to minimize time-to-root-cause.
+
+Common edge cases to watch:
+- Strict range regex (`^p([0-9]+)-([0-9]+)$`) rejects variants like `p40–42` or `p40 - 42`.
+- Required-key checks validate presence, but not always semantic quality (empty strings/lists).
+- For non-adjacent chapter scopes, use union-of-ranges overlap logic instead of single `[S, E]`.
+
+Low-cost hardening options:
+- Validate `id/title/claim` as non-empty strings.
+- Validate `scope_keywords` as a non-empty list of strings.
+- Keep production grader float-only, but optionally maintain a local debug helper that reports failure reasons.
+
