@@ -1,6 +1,6 @@
 # Curator A.5 — Soft Page-Band Scope Grading (Float-only Python Graders)
 
-This guide mirrors the A.4 soft-chapter pattern, adapted for **A.5 page-band constraints**.
+This guide mirrors the A.4 soft-chapter pattern, adapted for A.5 page-band constraints.
 
 Contract:
 - Python graders return **float only** (`1.0` PASS, `0.0` FAIL).
