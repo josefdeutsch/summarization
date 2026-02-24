@@ -96,6 +96,27 @@ Recommended rule:
 
 ---
 
+## 5.1) Multi-chapter expected range (e.g., Chapter 2 + 3 + 4)
+
+If your test case expects several adjacent chapters together, treat them as one expected interval.
+
+Example:
+- Chapter 2: `p38-66`
+- Chapter 3: `p67-94`
+- Chapter 4: `p95-120`
+- Combined expected interval: `p38-120`
+
+Suggested dataset fields for this mode:
+- `expected_chapter_start` = first page of the first chapter
+- `expected_chapter_end` = last page of the last chapter
+- `expected_chapter_labels` (optional) = list like `["Chapter 2", "Chapter 3", "Chapter 4"]`
+
+Your existing overlap grader then works unchanged, because it already compares each takeaway range against a single expected interval `[S, E]`.
+
+For non-adjacent chapter sets, prefer an explicit list of allowed ranges and compute overlap against the union of intervals.
+
+---
+
 ## 6) Main soft-chapter grader (single test)
 
 ### Test — Chapter Scope Soft Overlap Quality
