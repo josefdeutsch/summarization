@@ -6,6 +6,13 @@ This rewrite applies the clarified contract:
 - Read model output from `sample.get("output_text", "")`.
 - Parse JSON from text with `json.loads(output_text)`.
 
+
+## What this test framework does (brief)
+
+This guide defines a deterministic, float-only test framework that checks whether Curator outputs stay within the expected chapter scope while preserving required schema and exact takeaway count.
+
+**Goal:** catch scope drift early (cross-chapter leakage), enforce machine-parseable structure, and provide a step-by-step debug path from parse errors to overlap-quality failures.
+
 ---
 
 ## 1) Python grader contract (critical)
