@@ -25,4 +25,6 @@ Keep each case guide in its own Markdown file. `eval-curator.md` is the suite in
 - A.4 guide: `evals_curator_a4_soft_chapter_grader.md`
 - A.6 guide: `evals_curator_a6_soft_cluster_locality_grader.md`
 
+- Reusable case template: `evals_curator_grader_template.md`
+
 For future cases (A.1, A.2, A.3, A.7, A.8, A.9, A.10), create one dedicated `.md` per case and link it here.
