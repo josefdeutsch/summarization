@@ -24,14 +24,7 @@ Content quality requirements
 
 Locality and citation requirements (critical)
 - Ground each takeaway in one local evidence band.
-- Each takeaway must use exactly one contiguous page range.
-- Do not combine multiple ranges in one takeaway.
-- Keep citations locally coherent; avoid scattered support across distant pages.
-
-Range formatting requirements
-- `approx_page_range` must be exactly `p<start>-<end>`.
-- Valid: `p82-85`
-- Invalid: `p82-p85`, `82-85`, `p82–85`, `p82 - 85`, `p82-85, p90-92`
+- Keep citations locally coherent; avoid scattered support across distant sections.
 
 Output contract (strict)
 - Return JSON only (no markdown, no prose).
@@ -43,7 +36,7 @@ Output contract (strict)
       "title": "Short H3-style heading",
       "claim": "One-sentence core insight",
       "scope_keywords": ["keyword1", "keyword2"],
-      "approx_page_range": "p82-85"
+"approx_page_range": "optional, only if your eval row uses page ranges"
     }
   ]
 }
@@ -51,8 +44,8 @@ Output contract (strict)
 Self-check before responding
 1) Output is valid JSON and schema-complete.
 2) Takeaway count follows user/dataset requirements.
-3) Every takeaway has exactly one contiguous `approx_page_range` in valid format.
-4) All ranges are inside requested scope when scope is provided.
+3) If you use `approx_page_range`, keep one contiguous range in valid format.
+4) If scope boundaries are provided, keep outputs inside that scope.
 
 ```
 
@@ -77,12 +70,14 @@ Identify the 4–8 most central, non-trivial takeaways from the entire book usin
 
 ## 1) What this grader covers
 
-A.1–A.3 here uses two deterministic checks per run:
-1. **Schema Validator** — output is valid JSON with required takeaway structure.
-2. **Clustering Width Check** — each takeaway page span is limited (default max width: 40 pages).
+A.1–A.3 here uses one always-on baseline check and optional page-range checks.
+1. **Schema Validator (always-on)** — output is valid JSON with required takeaway structure.
+2. **Clustering Width Check (optional)** — use only if your eval rows include page ranges.
 
 These match your recorded labels:
 - `prompt_1_A_Schema_Validator_*`
+
+Use these only when page ranges are part of the case:
 - `prompt_1_A_Clustering_Width_Check_*`
 
 ---
@@ -120,7 +115,7 @@ import json
 import re
 
 RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
-REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords"]
 
 
 def grade(sample, item):
@@ -162,16 +157,18 @@ def grade(sample, item):
         if not isinstance(t["scope_keywords"], list):
             return 0.0
 
-        rng = t.get("approx_page_range")
-        if not isinstance(rng, str) or not RANGE_RE.match(rng):
-            return 0.0
+        # Optional in A.1-A.3 baseline mode: only validate if present.
+        if "approx_page_range" in t:
+            rng = t.get("approx_page_range")
+            if not isinstance(rng, str) or not RANGE_RE.match(rng):
+                return 0.0
 
     return 1.0
 ```
 
 ---
 
-## 4) Test B — Clustering Width Check (semi-mechanical)
+## 4) Optional Test B — Clustering Width Check (semi-mechanical)
 
 ```python
 import json
@@ -259,7 +256,7 @@ def grade(sample, item):
 ## 6) Recommended debug order (OpenAI Evals UI)
 
 1. Schema Validator
-2. Clustering Width Check
+2. (Optional) Clustering Width Check
 3. (Optional) Scope Boundary Check
 
 This matches your A.1 infrastructure check, A.2 stability rerun, and A.3 baseline full-book clustering test loop.
