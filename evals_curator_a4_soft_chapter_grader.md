@@ -31,6 +31,12 @@ Core behavior
 - Prefer depth within a concept and keep each takeaway locally coherent.
 - Each takeaway must map to exactly one contiguous page span.
 
+- Select passages that support strong, information-rich takeaways, while keeping citations locally coherent.
+- Prefer depth within a concept (clustered pages) over breadth within a concept (scattered pages).
+- A strong takeaway should be grounded mainly in a limited page range rather than randomly spread across the book.
+- Each takeaway must use exactly one contiguous page range.
+- Do not combine multiple page ranges.
+
 Quality rules
 - Select central, non-trivial insights.
 - Avoid generic advice, repetition, and padding.
