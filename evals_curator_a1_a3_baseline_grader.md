@@ -44,7 +44,7 @@ Output contract (strict)
 Self-check before responding
 1) Output is valid JSON and schema-complete.
 2) Takeaway count follows user/dataset requirements.
-3) If you use `approx_page_range`, keep one contiguous range in valid format.
+3) If you use `approx_page_range`, keep one contiguous range in `p<start>-<end>` or `<start>-<end>` format.
 4) If scope boundaries are provided, keep outputs inside that scope.
 
 ```
@@ -114,7 +114,7 @@ Recommended runtime config fields for graders:
 import json
 import re
 
-RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+RANGE_RE = re.compile(r"^p?([0-9]+)-([0-9]+)$")
 REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords"]
 
 
@@ -174,7 +174,7 @@ def grade(sample, item):
 import json
 import re
 
-RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+RANGE_RE = re.compile(r"^p?([0-9]+)-([0-9]+)$")
 
 
 def grade(sample, item):
@@ -220,7 +220,7 @@ If a row provides both `scope_start_page` and `scope_end_page`, add this test to
 import json
 import re
 
-RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+RANGE_RE = re.compile(r"^p?([0-9]+)-([0-9]+)$")
 
 
 def grade(sample, item):
