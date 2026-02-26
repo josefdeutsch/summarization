@@ -76,14 +76,12 @@ Identify the 4–8 most central, non-trivial takeaways from the entire book usin
 
 ## 1) What this grader covers
 
-A.1–A.3 here uses one always-on baseline check and optional page-range checks.
-1. **Schema Validator (always-on)** — output is valid JSON with required takeaway structure.
-2. **Clustering Width Check (optional)** — use only if your eval rows include page ranges.
+A.1–A.3 here uses two deterministic checks per run:
+1. **Schema Validator (always-on)** — output is valid JSON with required takeaway structure, including `approx_page_range`.
+2. **Clustering Width Check** — each takeaway page span is limited (default max width: 40 pages).
 
 These match your recorded labels:
 - `prompt_1_A_Schema_Validator_*`
-
-Use these only when page ranges are part of the case:
 - `prompt_1_A_Clustering_Width_Check_*`
 
 ---
@@ -120,8 +118,8 @@ Recommended runtime config fields for graders:
 import json
 import re
 
-RANGE_RE = re.compile(r"^p?([0-9]+)-([0-9]+)$")
-REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords"]
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
 def grade(sample, item):
@@ -163,24 +161,22 @@ def grade(sample, item):
         if not isinstance(t["scope_keywords"], list):
             return 0.0
 
-        # Optional in A.1-A.3 baseline mode: only validate if present.
-        if "approx_page_range" in t:
-            rng = t.get("approx_page_range")
-            if not isinstance(rng, str) or not RANGE_RE.match(rng):
-                return 0.0
+        rng = t.get("approx_page_range")
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
 
     return 1.0
 ```
 
 ---
 
-## 4) Optional Test B — Clustering Width Check (semi-mechanical)
+## 4) Test B — Clustering Width Check (semi-mechanical)
 
 ```python
 import json
 import re
 
-RANGE_RE = re.compile(r"^p?([0-9]+)-([0-9]+)$")
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 
 
 def grade(sample, item):
@@ -226,7 +222,7 @@ If a row provides both `scope_start_page` and `scope_end_page`, add this test to
 import json
 import re
 
-RANGE_RE = re.compile(r"^p?([0-9]+)-([0-9]+)$")
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 
 
 def grade(sample, item):
@@ -262,7 +258,7 @@ def grade(sample, item):
 ## 6) Recommended debug order (OpenAI Evals UI)
 
 1. Schema Validator
-2. (Optional) Clustering Width Check
+2. Clustering Width Check
 3. (Optional) Scope Boundary Check
 
 This matches your A.1 infrastructure check, A.2 stability rerun, and A.3 baseline full-book clustering test loop.
