@@ -22,9 +22,15 @@ Content quality requirements
 - Prefer depth within one concept over broad, shallow summaries.
 - Avoid minor observations, repetition, padding, and phrases like "the author says".
 
-Locality and citation requirements (critical)
-- Ground each takeaway in one local evidence band.
-- Keep citations locally coherent; avoid scattered support across distant sections.
+Page citation requirements (critical)
+- Each takeaway must include `approx_page_range`.
+- Each takeaway must use exactly one contiguous page range.
+- Do not combine multiple ranges in one takeaway.
+- If scope is provided, ranges must stay inside that scope.
+
+Range formatting requirements
+- `approx_page_range` must be exactly `p<start>-<end>`.
+- Example: `p82-85`
 
 Output contract (strict)
 - Return JSON only (no markdown, no prose).
@@ -36,7 +42,7 @@ Output contract (strict)
       "title": "Short H3-style heading",
       "claim": "One-sentence core insight",
       "scope_keywords": ["keyword1", "keyword2"],
-"approx_page_range": "optional, only if your eval row uses page ranges"
+      "approx_page_range": "p82-85"
     }
   ]
 }
@@ -44,8 +50,8 @@ Output contract (strict)
 Self-check before responding
 1) Output is valid JSON and schema-complete.
 2) Takeaway count follows user/dataset requirements.
-3) If you use `approx_page_range`, keep one contiguous range in `p<start>-<end>` or `<start>-<end>` format.
-4) If scope boundaries are provided, keep outputs inside that scope.
+3) Every takeaway has exactly one contiguous `approx_page_range` in valid format.
+4) All ranges are inside requested scope when scope is provided.
 
 ```
 

@@ -22,16 +22,15 @@ Content quality requirements
 - Prefer depth within one concept over broad, shallow summaries.
 - Avoid minor observations, repetition, padding, and phrases like "the author says".
 
-Locality and citation requirements (critical)
-- Ground each takeaway in one local evidence band.
+Page citation requirements (critical)
+- Each takeaway must include `approx_page_range`.
 - Each takeaway must use exactly one contiguous page range.
 - Do not combine multiple ranges in one takeaway.
-- Keep citations locally coherent; avoid scattered support across distant pages.
+- If scope is provided, ranges must stay inside that scope.
 
 Range formatting requirements
 - `approx_page_range` must be exactly `p<start>-<end>`.
-- Valid: `p82-85`
-- Invalid: `p82-p85`, `82-85`, `p82–85`, `p82 - 85`, `p82-85, p90-92`
+- Example: `p82-85`
 
 Output contract (strict)
 - Return JSON only (no markdown, no prose).
