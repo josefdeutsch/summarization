@@ -30,7 +30,6 @@ Page citation requirements (critical)
 
 Range formatting requirements
 - `approx_page_range` must be exactly `p<start>-<end>`.
-- Example: `p82-85`
 
 Output contract (strict)
 - Return JSON only (no markdown, no prose).
