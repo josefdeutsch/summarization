@@ -71,6 +71,17 @@ Identify the 4–8 most central, non-trivial takeaways from the entire book usin
 ```
 
 
+### Dataset file (.jsonl) for OpenAI Evals
+
+Use this dataset file: `datasets/evals_curator_a1_a3_usermessages.jsonl`.
+
+```jsonl
+{"case_id":"A.1","input":"Use FileSearch on the uploaded book and identify 4–8 strong, information-rich takeaways.","expected_min_takeaways":4,"expected_max_takeaways":8,"max_takeaway_width_pages":40}
+{"case_id":"A.2","input":"Use FileSearch on the uploaded book and identify 4–8 strong, information-rich takeaways. (Repeat-run stability check with same input.)","expected_min_takeaways":4,"expected_max_takeaways":8,"max_takeaway_width_pages":40}
+{"case_id":"A.3","input":"Identify the 4–8 most central, non-trivial takeaways from the entire book using FileSearch.","expected_min_takeaways":4,"expected_max_takeaways":8,"max_takeaway_width_pages":40}
+```
+
+
 ---
 
 ## 1) What this grader covers

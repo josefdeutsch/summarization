@@ -73,6 +73,15 @@ Extract exactly 8 information-rich takeaways from Chapter 2: The interoceptive s
 ```
 
 
+### Dataset file (.jsonl) for OpenAI Evals
+
+Use this dataset file: `datasets/evals_curator_a4_usermessage.jsonl`.
+
+```jsonl
+{"case_id":"A.4","input":"Extract exactly 8 information-rich takeaways from Chapter 2: The interoceptive superhighway, Chapter 3: Power up, and Chapter 4: Gut reading for beginners.","expected_chapter_start":38,"expected_chapter_end":134,"expected_takeaway_count":8}
+```
+
+
 ---
 
 ## 1) Python grader contract (critical)

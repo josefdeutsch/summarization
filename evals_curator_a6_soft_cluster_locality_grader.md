@@ -60,6 +60,15 @@ Extract exactly 8 information-rich takeaways from the book. Keep each takeaway l
 ```
 
 
+### Dataset file (.jsonl) for OpenAI Evals
+
+Use this dataset file: `datasets/evals_curator_a6_usermessage.jsonl`.
+
+```jsonl
+{"case_id":"A.6","input":"Extract exactly 8 information-rich takeaways from the book. Keep each takeaway locally coherent and avoid mixing distant sections.","expected_takeaway_count":8,"max_takeaway_span_pages":6,"required_cluster_ranges":[[38,66],[100,134],[180,210]]}
+```
+
+
 ---
 
 ### What A.6 is trying to prevent

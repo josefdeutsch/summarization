@@ -66,6 +66,15 @@ Self-check before responding
 Extract exactly 8 information-rich takeaways from this mostly motivational/narrative book. Avoid platitudes and keep claims mechanism-rich and specific.
 ```
 
+### Dataset file (.jsonl) for OpenAI Evals
+
+Use this dataset file: `datasets/evals_curator_a7_usermessage.jsonl`.
+
+```jsonl
+{"case_id":"A.7","input":"Extract exactly 8 information-rich takeaways from this mostly motivational/narrative book. Avoid platitudes and keep claims mechanism-rich and specific.","expected_takeaway_count":8,"min_claim_char_len":90,"min_scope_keywords":3,"banned_generic_phrases":["believe in yourself","never give up","stay positive"],"mechanism_terms":["feedback","loop","constraint","trade-off","cause","signal","pathway"]}
+```
+
+
 ---
 
 ## 1) Python grader contract (critical)
@@ -213,31 +222,170 @@ def grade(sample, item):
 
 ## 5) Split debug tests (float-only)
 
+Use each test below as a separate grader in OpenAI Evals Web UI (one `grade(sample, item)` per test).
+
 ### Test 1 — JSON Parse Validity
-- `json.loads(sample["output_text"])` must succeed.
+```python
+import json
+
+def grade(sample, item):
+    try:
+        json.loads(sample.get("output_text", ""))
+        return 1.0
+    except Exception:
+        return 0.0
+```
 
 ### Test 2 — Root Object + Takeaways Array
-- Root must be dict with `takeaways` list.
+```python
+import json
+
+def grade(sample, item):
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
+        return 0.0
+    return 1.0 if isinstance(obj, dict) and isinstance(obj.get("takeaways"), list) else 0.0
+```
 
 ### Test 3 — Required Field Presence
-- Every takeaway must include `id`, `title`, `claim`, `scope_keywords`, `approx_page_range`.
+```python
+import json
+
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
+
+def grade(sample, item):
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
+        return 0.0
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+    return 1.0
+```
 
 ### Test 4 — Dataset Config Validity
-- Validate `expected_takeaway_count`, `min_claim_char_len`, `min_scope_keywords`.
+```python
+def grade(sample, item):
+    try:
+        expected_n = int(item["expected_takeaway_count"])
+        min_claim = int(item.get("min_claim_char_len", 90))
+        min_kw = int(item.get("min_scope_keywords", 3))
+    except Exception:
+        return 0.0
+    if expected_n < 1 or min_claim < 20 or min_kw < 1:
+        return 0.0
+    return 1.0
+```
 
 ### Test 5 — Exact Takeaway Count Match
-- Require `len(takeaways) == expected_takeaway_count`.
+```python
+import json
+
+def grade(sample, item):
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
+    except Exception:
+        return 0.0
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+    return 1.0 if len(takeaways) == expected_n else 0.0
+```
 
 ### Test 6 — Range Format Validation
-- Require `approx_page_range` to match `^p([0-9]+)-([0-9]+)$`.
+```python
+import json
+import re
+
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+
+def grade(sample, item):
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
+        return 0.0
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+    for t in takeaways:
+        rng = t.get("approx_page_range", "") if isinstance(t, dict) else ""
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
+    return 1.0
+```
 
 ### Test 7 — Hard Non-triviality Floor
-- Fail if claim is too short or contains banned generic phrase.
+```python
+import json
 
-### Test 8 — Soft Mechanism Quality
-- Require at least `N-1` takeaways with keyword richness + mechanism term grounding.
+def grade(sample, item):
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        min_claim = int(item.get("min_claim_char_len", 90))
+        banned = item.get("banned_generic_phrases", [])
+    except Exception:
+        return 0.0
+    if not isinstance(banned, list):
+        return 0.0
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+    for t in takeaways:
+        claim = t.get("claim", "") if isinstance(t, dict) else ""
+        if not isinstance(claim, str) or len(claim.strip()) < min_claim:
+            return 0.0
+        c = claim.lower()
+        for phrase in banned:
+            if isinstance(phrase, str) and phrase.strip() and phrase.lower() in c:
+                return 0.0
+    return 1.0
+```
 
----
+### Test 8 — Soft Mechanism Quality (`N-1`)
+```python
+import json
+
+def has_any_term(text, terms):
+    t = text.lower()
+    for term in terms:
+        if isinstance(term, str) and term.strip() and term.lower() in t:
+            return True
+    return False
+
+
+def grade(sample, item):
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
+        min_kw = int(item.get("min_scope_keywords", 3))
+        mech_terms = item.get("mechanism_terms", [])
+    except Exception:
+        return 0.0
+    if not isinstance(mech_terms, list):
+        return 0.0
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+    strong = 0
+    for t in takeaways:
+        claim = t.get("claim", "") if isinstance(t, dict) else ""
+        kws = t.get("scope_keywords", []) if isinstance(t, dict) else []
+        if not isinstance(claim, str) or not isinstance(kws, list):
+            return 0.0
+        mechanism_ok = True if not mech_terms else has_any_term(claim, mech_terms)
+        if len(kws) >= min_kw and mechanism_ok:
+            strong += 1
+    return 1.0 if strong >= expected_n - 1 else 0.0
+```
 
 ## 6) Recommended debug order
 

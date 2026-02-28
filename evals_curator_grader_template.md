@@ -66,6 +66,17 @@ Self-check before responding
 {{PLACEHOLDER_USERMESSAGE_FOR_CASE}}
 ```
 
+### Dataset file (.jsonl) for OpenAI Evals
+
+Create a case dataset file for the usermessage with one JSON object per line.
+
+Use this starter template file: `datasets/evals_curator_case_template.jsonl`.
+
+```jsonl
+{"case_id":"{{CASE_ID}}","input":"{{PLACEHOLDER_USERMESSAGE_FOR_CASE}}","expected_takeaway_count":8,"{{CASE_FIELD_1}}":"{{VALUE}}","{{CASE_FIELD_2}}":"{{VALUE}}"}
+```
+
+
 ---
 
 ## 1) Python grader contract (critical)
@@ -216,6 +227,7 @@ def grade(sample, item):
 ## 6) Split debug tests (small graders, float-only)
 
 Use these as separate tests in OpenAI Evals Web UI to isolate failures.
+Use each debug test as a separate grader in OpenAI Evals Web UI (do not paste all tests into one grader block).
 
 ### Test 1 — JSON Parse Validity
 - Parses `sample["output_text"]` with `json.loads`.
