@@ -28,13 +28,11 @@ Content quality requirements
 - Prefer depth within one concept over broad, shallow summaries.
 - Avoid minor observations, repetition, padding, and phrases like "the author says".
 - Prefer mechanism-rich claims over inspirational principles.
-- Each `claim` should state context, causal mechanism, and observable outcome in one sentence.
-- Include boundaries when relevant (trade-off, limit, or failure mode).
 
 Page citation requirements (critical)
 - Each takeaway must include `approx_page_range`.
 - Each takeaway must use exactly one contiguous page range.
-- Use the shortest contiguous range that still captures the full argument; expand only when the idea genuinely develops across multiple pages (typically about 6–15 pages when needed).
+- A takeaway may use a broader single contiguous range when the underlying argument unfolds across several pages (for example, around 6–15 pages when needed).
 - Do not combine multiple ranges in one takeaway.
 - If scope is provided, ranges must stay inside that scope.
 
@@ -57,9 +55,8 @@ Output contract (strict)
 }
 
 Self-check before responding
-1) Each claim has context + mechanism + outcome (not just a principle).
-2) Claims are specific enough to test in practice.
-3) Remove any claim that could apply to almost any book unchanged.
+1) Output is valid JSON and schema-complete.
+2) Takeaway count follows user requirements.
 ```
 
 ### usermessage (A.7)
