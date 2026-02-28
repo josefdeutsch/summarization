@@ -1,11 +1,12 @@
 # Curator {{CASE_ID}} — {{CASE_TITLE}} Grading Guide Template
 
 ## 1) Guide purpose
-Use this template to create a new **float-only Python grader guide** with the same structure as A.6 and A.7. Replace placeholders and keep the section order unchanged so every guide remains uniform and easy to review.
+Use this template to create a new float-only grader guide that matches the A.6/A.7 format and the OpenAI Evals Web UI execution model.
 
-This template intentionally separates:
-- **Baseline checks** (JSON parse + root `takeaways` shape).
-- **Case-specific checks** (named for the use case).
+This template is optimized for **debuggability by chunks**:
+- baseline chunk tests isolate parsing/schema issues,
+- case-specific chunk tests isolate use-case logic,
+- every code block is directly runnable as one grader.
 
 ## 2) Prompt package
 
@@ -62,55 +63,62 @@ Output contract (strict)
 
 ## 3) Grader contract
 - Signature must be `def grade(sample, item):`.
-- Return float only: `1.0` (pass) or `0.0` (fail).
+- Return float only: `1.0` pass, `0.0` fail.
 - Parse model output from `sample.get("output_text", "")`.
-- Keep baseline helper names unchanged across guides.
-- Name non-baseline helpers after their case purpose.
+- In this template, every runnable snippet defines only `grade(sample, item)`.
+- Express case-specific naming in section/test names (e.g., `{{CASE_ID}}_hard_floor`, `{{CASE_ID}}_soft_quality`).
 
-## 4) Main grader template
+## 4) Main grader ({{CASE_ID}}_main_quality)
 ```python
 import json
+import re
 
-
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
-    try:
-        return json.loads(sample.get("output_text", ""))
-    except Exception:
-        return None
-
-
-def get_takeaways_array(obj):
-    """Return `takeaways` when root schema is valid; otherwise return None."""
-    if not isinstance(obj, dict):
-        return None
-    takeaways = obj.get("takeaways")
-    return takeaways if isinstance(takeaways, list) else None
-
-
-def validate_{{CASE_USECASE_NAME}}_constraints(takeaways, item):
-    """Validate {{CASE_ID}}-specific requirements; return True/False."""
-    # Implement case-specific checks here.
-    # Example:
-    # expected_n = int(item["expected_takeaway_count"])
-    # return len(takeaways) == expected_n
-    return True
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
 def grade(sample, item):
-    """Return 1.0 when baseline and case-specific checks pass; else 0.0."""
-    obj = parse_output_json(sample)
-    if obj is None:
+    """Return 1.0 when baseline checks and {{CASE_ID}}-specific quality checks pass."""
+    output_text = sample.get("output_text", "")
+
+    try:
+        obj = json.loads(output_text)
+        expected_n = int(item["expected_takeaway_count"])
+    except Exception:
         return 0.0
 
-    takeaways = get_takeaways_array(obj)
-    if takeaways is None:
+    if not isinstance(obj, dict):
+        return 0.0
+    takeaways = obj.get("takeaways")
+    if not isinstance(takeaways, list):
+        return 0.0
+    if len(takeaways) != expected_n:
         return 0.0
 
-    return 1.0 if validate_{{CASE_USECASE_NAME}}_constraints(takeaways, item) else 0.0
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+
+        rng = t.get("approx_page_range", "")
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
+
+    # --- {{CASE_ID}}-specific logic starts here ---
+    # Replace this placeholder with your use-case conditions.
+    # Example:
+    # threshold = int(item.get("{{CASE_THRESHOLD_FIELD}}", 1))
+    # score = ...
+    # if score < threshold:
+    #     return 0.0
+    # --- {{CASE_ID}}-specific logic ends here ---
+
+    return 1.0
 ```
 
-## 5) Split debug tests (minimal set)
+## 5) Split debug tests (chunk-by-chunk)
 Run each test as a separate grader block in OpenAI Evals UI.
 
 ### Test 1 — Baseline JSON parse validity
@@ -118,83 +126,164 @@ Run each test as a separate grader block in OpenAI Evals UI.
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
-    try:
-        return json.loads(sample.get("output_text", ""))
-    except Exception:
-        return None
-
-
 def grade(sample, item):
-    """Return 1.0 when output is valid JSON; else 0.0."""
-    return 1.0 if parse_output_json(sample) is not None else 0.0
+    """Return 1.0 when output_text parses as JSON."""
+    try:
+        json.loads(sample.get("output_text", ""))
+        return 1.0
+    except Exception:
+        return 0.0
 ```
 
-### Test 2 — Baseline takeaway container shape
+### Test 2 — Baseline root object + takeaways array
 ```python
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when root is object and `takeaways` is a list."""
     try:
-        return json.loads(sample.get("output_text", ""))
+        obj = json.loads(sample.get("output_text", ""))
     except Exception:
-        return None
+        return 0.0
 
-
-def get_takeaways_array(obj):
-    """Return `takeaways` when root schema is valid; otherwise return None."""
     if not isinstance(obj, dict):
-        return None
-    takeaways = obj.get("takeaways")
-    return takeaways if isinstance(takeaways, list) else None
+        return 0.0
+    if not isinstance(obj.get("takeaways"), list):
+        return 0.0
+    return 1.0
+```
+
+### Test 3 — Baseline required takeaway fields
+```python
+import json
+
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
 def grade(sample, item):
-    """Return 1.0 when root object and takeaway array exist; else 0.0."""
-    obj = parse_output_json(sample)
-    if obj is None:
+    """Return 1.0 when every takeaway includes all required keys."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
         return 0.0
-    return 1.0 if get_takeaways_array(obj) is not None else 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+
+    return 1.0
 ```
 
-### Test 3 — Case-specific constraints
+### Test 4 — Baseline dataset config validity
+```python
+
+def grade(sample, item):
+    """Return 1.0 when dataset config fields required by this case are valid."""
+    try:
+        expected_n = int(item["expected_takeaway_count"])
+        # Add case fields here, e.g.:
+        # hard_floor = int(item["{{CASE_FIELD_1}}"])
+        # soft_floor = int(item["{{CASE_FIELD_2}}"])
+    except Exception:
+        return 0.0
+
+    if expected_n < 1:
+        return 0.0
+
+    # Add additional case-specific config validation here.
+    return 1.0
+```
+
+### Test 5 — Baseline exact takeaway count
 ```python
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when takeaway count exactly matches expected_takeaway_count."""
     try:
-        return json.loads(sample.get("output_text", ""))
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
     except Exception:
-        return None
+        return 0.0
 
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
 
-def validate_{{CASE_USECASE_NAME}}_constraints(takeaways, item):
-    """Validate {{CASE_ID}}-specific requirements; return True/False."""
-    # Implement case-specific checks here.
-    return True
+    return 1.0 if len(takeaways) == expected_n else 0.0
+```
+
+### Test 6 — Baseline page-range format validity
+```python
+import json
+import re
+
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 
 
 def grade(sample, item):
-    """Return 1.0 when {{CASE_ID}}-specific checks pass; else 0.0."""
-    obj = parse_output_json(sample)
-    if not isinstance(obj, dict) or not isinstance(obj.get("takeaways"), list):
+    """Return 1.0 when every `approx_page_range` matches p<start>-<end>."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
         return 0.0
-    return 1.0 if validate_{{CASE_USECASE_NAME}}_constraints(obj["takeaways"], item) else 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    for t in takeaways:
+        rng = t.get("approx_page_range", "") if isinstance(t, dict) else ""
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
+
+    return 1.0
+```
+
+### Test 7 — {{CASE_ID}}_usecase_specific_quality
+```python
+import json
+
+
+def grade(sample, item):
+    """Return 1.0 when {{CASE_ID}}-specific quality constraints pass."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
+    except Exception:
+        return 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list) or len(takeaways) != expected_n:
+        return 0.0
+
+    # Implement case-specific checks here.
+    # Return 0.0 on fail, 1.0 on pass.
+    return 1.0
 ```
 
 ## 6) Recommended debug order
-1. Test 1 (JSON parse)
-2. Test 2 (root + `takeaways` list)
-3. Test 3 (case-specific checks)
+1. Test 1 — JSON parse
+2. Test 2 — root + takeaways list
+3. Test 3 — required fields
+4. Test 4 — dataset config
+5. Test 5 — exact count
+6. Test 6 — range format
+7. Test 7 — case-specific quality
 
 ## 7) Author checklist
 - Keep this exact section order.
-- Keep baseline helper names: `parse_output_json`, `get_takeaways_array`.
-- Use case-specific helper naming for non-baseline logic.
-- Add docstrings to every function.
-- Keep split debug tests minimal.
+- Ensure every runnable snippet defines only `def grade(sample, item):`.
+- Keep baseline tests generic.
+- Name case-specific tests by use case (not generic labels).
+- Add a docstring to every `grade` function.
+- Keep tests minimal but sufficient for isolated debugging.
