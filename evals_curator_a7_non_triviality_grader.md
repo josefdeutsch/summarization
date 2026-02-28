@@ -27,6 +27,9 @@ Content quality requirements
 - Select central, non-trivial insights.
 - Prefer depth within one concept over broad, shallow summaries.
 - Avoid minor observations, repetition, padding, and phrases like "the author says".
+- Do not write universal self-help claims (e.g., "growth comes from discomfort") unless you name a concrete mechanism.
+- Each `claim` must explicitly include: **(a)** trigger/context, **(b)** mechanism/process, **(c)** observable outcome.
+- At least 6 of 8 claims should include a trade-off, boundary condition, or failure mode.
 
 Page citation requirements (critical)
 - Each takeaway must include `approx_page_range`.
@@ -53,6 +56,12 @@ Output contract (strict)
 }
 ```
 
+Self-check before responding
+1) Each claim contains a trigger/context, mechanism, and outcome (not just a principle).
+2) Claims are falsifiable and operational: someone could test whether they hold.
+3) At least 6 claims include one qualifier such as a trade-off, limit, or counter-condition.
+4) Remove any claim that would still sound valid without book-specific evidence.
+
 ### usermessage (A.7)
 ```text
 Extract exactly 8 information-rich takeaways from this mostly motivational/narrative book. Avoid platitudes and keep claims mechanism-rich and specific.
@@ -61,6 +70,16 @@ Extract exactly 8 information-rich takeaways from this mostly motivational/narra
 ### Inline dataset row (.jsonl)
 ```jsonl
 {"case_id":"A.7","input":"Extract exactly 8 information-rich takeaways from this mostly motivational/narrative book. Avoid platitudes and keep claims mechanism-rich and specific.","expected_takeaway_count":8,"min_claim_char_len":90,"min_scope_keywords":3,"banned_generic_phrases":["believe in yourself","never give up","stay positive"],"mechanism_terms":["feedback","loop","constraint","trade-off","cause","signal","pathway"]}
+```
+
+### Prompt hardening recommendation from observed output
+The provided sample output is structurally valid but still leans generic in several claims (high-level abstractions that can fit many books). To reduce this failure mode, strengthen A.7 user instructions with an explicit mechanism format:
+
+```text
+Extract exactly 8 information-rich takeaways from this mostly motivational/narrative book.
+For each takeaway claim, force this pattern in one sentence:
+"When [specific trigger/context], [actor/process] changes [intermediate variable], which leads to [observable outcome], with [trade-off or boundary condition]."
+Reject generic advice that could apply to any book.
 ```
 
 ## 3) Grader contract
