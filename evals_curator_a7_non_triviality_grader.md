@@ -34,6 +34,7 @@ Content quality requirements
 Page citation requirements (critical)
 - Each takeaway must include `approx_page_range`.
 - Each takeaway must use exactly one contiguous page range.
+- Use the shortest contiguous range that still captures the full argument; expand only when the idea genuinely develops across multiple pages (typically about 6–15 pages when needed).
 - Do not combine multiple ranges in one takeaway.
 - If scope is provided, ranges must stay inside that scope.
 
