@@ -100,6 +100,19 @@ def grade(sample, item):
 
     banned_phrases = item.get("banned_generic_phrases", [])
     mechanism_terms = item.get("mechanism_terms", [])
+
+    # OpenAI Evals rows sometimes arrive with list-like fields serialized as JSON strings.
+    if isinstance(banned_phrases, str):
+        try:
+            banned_phrases = json.loads(banned_phrases)
+        except Exception:
+            return 0.0
+    if isinstance(mechanism_terms, str):
+        try:
+            mechanism_terms = json.loads(mechanism_terms)
+        except Exception:
+            return 0.0
+
     if not isinstance(banned_phrases, list) or not isinstance(mechanism_terms, list):
         return 0.0
 
@@ -208,6 +221,8 @@ def grade(sample, item):
 
 ### Test 4 — Baseline dataset config validity
 ```python
+import json
+
 
 def grade(sample, item):
     """Return 1.0 when A.7 threshold/list config in dataset row is valid."""
@@ -219,6 +234,18 @@ def grade(sample, item):
         mech = item.get("mechanism_terms", [])
     except Exception:
         return 0.0
+
+    # Accept either native lists or JSON-stringified lists.
+    if isinstance(banned, str):
+        try:
+            banned = json.loads(banned)
+        except Exception:
+            return 0.0
+    if isinstance(mech, str):
+        try:
+            mech = json.loads(mech)
+        except Exception:
+            return 0.0
 
     if expected_n < 1 or min_claim_chars < 20 or min_scope_keywords < 1:
         return 0.0
@@ -264,6 +291,12 @@ def grade(sample, item):
     except Exception:
         return 0.0
 
+    if isinstance(banned, str):
+        try:
+            banned = json.loads(banned)
+        except Exception:
+            return 0.0
+
     if not isinstance(banned, list):
         return 0.0
 
@@ -304,6 +337,12 @@ def grade(sample, item):
         mechanism_terms = item.get("mechanism_terms", [])
     except Exception:
         return 0.0
+
+    if isinstance(mechanism_terms, str):
+        try:
+            mechanism_terms = json.loads(mechanism_terms)
+        except Exception:
+            return 0.0
 
     if not isinstance(mechanism_terms, list):
         return 0.0
