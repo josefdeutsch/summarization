@@ -1,18 +1,13 @@
-# Curator {{CASE_ID}} — {{CASE_TITLE}} (Float-only Python Graders)
+# Curator {{CASE_ID}} — {{CASE_TITLE}} Grading Guide Template
 
-This guide mirrors the Curator grader style used in A.4/A.6 and is intended as a reusable template for future cases (e.g., A.7).
+## 1) Guide purpose
+Use this template to create a new **float-only Python grader guide** with the same structure as A.6 and A.7. Replace placeholders and keep the section order unchanged so every guide remains uniform and easy to review.
 
-## What this test framework does (brief)
+This template intentionally separates:
+- **Baseline checks** (JSON parse + root `takeaways` shape).
+- **Case-specific checks** (named for the use case).
 
-This guide defines a deterministic, float-only test framework for Curator outputs.
-
-**Goal:** enforce machine-parseable structure, exact count behavior, and case-specific quality constraints while keeping debugging simple and stepwise.
-
----
-
-## Chat prompt (Takeaway Curator)
-
-Declare the following prompt as `systemmessage`:
+## 2) Prompt package
 
 ### systemmessage
 ```text
@@ -53,12 +48,6 @@ Output contract (strict)
     }
   ]
 }
-
-Self-check before responding
-1) Output is valid JSON and schema-complete.
-2) Takeaway count follows user/dataset requirements.
-3) Every takeaway has exactly one contiguous `approx_page_range` in valid format.
-4) All ranges are inside requested scope when scope is provided.
 ```
 
 ### usermessage
@@ -66,215 +55,146 @@ Self-check before responding
 {{PLACEHOLDER_USERMESSAGE_FOR_CASE}}
 ```
 
-### Dataset file (.jsonl) for OpenAI Evals
-
-Create a case dataset file for the usermessage with one JSON object per line.
-
-Use this starter template file: `datasets/evals_curator_case_template.jsonl`.
-
+### Inline dataset row (.jsonl)
 ```jsonl
 {"case_id":"{{CASE_ID}}","input":"{{PLACEHOLDER_USERMESSAGE_FOR_CASE}}","expected_takeaway_count":8,"{{CASE_FIELD_1}}":"{{VALUE}}","{{CASE_FIELD_2}}":"{{VALUE}}"}
 ```
 
+## 3) Grader contract
+- Signature must be `def grade(sample, item):`.
+- Return float only: `1.0` (pass) or `0.0` (fail).
+- Parse model output from `sample.get("output_text", "")`.
+- Keep baseline helper names unchanged across guides.
+- Name non-baseline helpers after their case purpose.
 
----
-
-## 1) Python grader contract (critical)
-
-- Return float only: `1.0` PASS, `0.0` FAIL.
-- Use `def grade(sample, item):`.
-- Read output from `sample.get("output_text", "")`.
-- Parse with `json.loads(output_text)`.
-- Do not return dicts in this guide.
-
----
-
-## 2) Runtime mapping: `sample` vs `item`
-
-- `sample`: model output payload (`output_text`, `output_json`, `choices`, ...)
-- `item`: dataset row for expected eval behavior (`expected_takeaway_count`, case-specific fields, ...)
-
-Typical pattern:
-
-```python
-output_text = sample.get("output_text", "")
-expected_n = int(item.get("expected_takeaway_count", 0))
-```
-
----
-
-## 3) Dataset fields (template)
-
-Use base fields:
-- `case_id`
-- `input`
-- `expected_takeaway_count`
-
-Add case-specific fields:
-- `{{CASE_FIELD_1}}`
-- `{{CASE_FIELD_2}}`
-- `{{CASE_FIELD_3_OPTIONAL}}`
-
-Example:
-
-```json
-{
-  "case_id": "{{CASE_ID}}",
-  "input": "{{USER_INSTRUCTION}}",
-  "expected_takeaway_count": 8,
-  "{{CASE_FIELD_1}}": "{{VALUE}}",
-  "{{CASE_FIELD_2}}": "{{VALUE}}"
-}
-```
-
----
-
-## 4) Case logic (ACTUAL vs EXPECTED)
-
-Define clearly:
-- EXPECTED behavior from dataset fields.
-- ACTUAL behavior from parsed output (`takeaways[*].approx_page_range` and required keys).
-- Hard floor threshold (immediate fail condition).
-- Soft quality threshold (`N-1` rule or equivalent).
-
-Template math block:
-
-- `{{INTERMEDIATE_METRIC_1}} = ...`
-- `{{INTERMEDIATE_METRIC_2}} = ...`
-- `{{QUALITY_RATIO}} = ...`
-
-Recommended rule:
-- fail if any takeaway violates hard floor (`{{HARD_FLOOR_RULE}}`)
-- pass if at least `expected_n - 1` takeaways satisfy soft quality (`{{SOFT_QUALITY_RULE}}`)
-
----
-
-## 5) Main grader — {{CASE_MAIN_TEST_NAME}}
-
+## 4) Main grader template
 ```python
 import json
-import re
 
-RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
-REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
+
+def parse_output_json(sample):
+    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+    try:
+        return json.loads(sample.get("output_text", ""))
+    except Exception:
+        return None
+
+
+def get_takeaways_array(obj):
+    """Return `takeaways` when root schema is valid; otherwise return None."""
+    if not isinstance(obj, dict):
+        return None
+    takeaways = obj.get("takeaways")
+    return takeaways if isinstance(takeaways, list) else None
+
+
+def validate_{{CASE_USECASE_NAME}}_constraints(takeaways, item):
+    """Validate {{CASE_ID}}-specific requirements; return True/False."""
+    # Implement case-specific checks here.
+    # Example:
+    # expected_n = int(item["expected_takeaway_count"])
+    # return len(takeaways) == expected_n
+    return True
 
 
 def grade(sample, item):
-    """Return 1.0 when output matches schema/count and {{CASE_LOGIC_SUMMARY}}."""
-    output_text = sample.get("output_text", "")
-
-    try:
-        obj = json.loads(output_text)
-    except Exception:
+    """Return 1.0 when baseline and case-specific checks pass; else 0.0."""
+    obj = parse_output_json(sample)
+    if obj is None:
         return 0.0
 
-    if not isinstance(obj, dict):
+    takeaways = get_takeaways_array(obj)
+    if takeaways is None:
         return 0.0
 
-    takeaways = obj.get("takeaways")
-    if not isinstance(takeaways, list):
-        return 0.0
-
-    try:
-        expected_n = int(item["expected_takeaway_count"])
-        # Case-specific expected values:
-        # x = item["{{CASE_FIELD_1}}"]
-        # y = item["{{CASE_FIELD_2}}"]
-    except Exception:
-        return 0.0
-
-    if expected_n < 1:
-        return 0.0
-
-    if len(takeaways) != expected_n:
-        return 0.0
-
-    strong = 0
-
-    for t in takeaways:
-        if not isinstance(t, dict):
-            return 0.0
-
-        for k in REQUIRED_KEYS:
-            if k not in t:
-                return 0.0
-
-        rng = t.get("approx_page_range", "")
-        if not isinstance(rng, str):
-            return 0.0
-
-        m = RANGE_RE.match(rng)
-        if not m:
-            return 0.0
-
-        A, B = int(m.group(1)), int(m.group(2))
-        a, b = min(A, B), max(A, B)
-        span = b - a + 1
-
-        # TODO: Insert case hard-floor logic
-        # if {{HARD_FAIL_CONDITION}}:
-        #     return 0.0
-
-        # TODO: Insert case soft-quality logic
-        # if {{STRONG_CONDITION}}:
-        #     strong += 1
-
-    return 1.0 if strong >= expected_n - 1 else 0.0
+    return 1.0 if validate_{{CASE_USECASE_NAME}}_constraints(takeaways, item) else 0.0
 ```
 
----
+## 5) Split debug tests (minimal set)
+Run each test as a separate grader block in OpenAI Evals UI.
 
-## 6) Split debug tests (small graders, float-only)
+### Test 1 — Baseline JSON parse validity
+```python
+import json
 
-Use these as separate tests in OpenAI Evals Web UI to isolate failures.
-Use each debug test as a separate grader in OpenAI Evals Web UI (do not paste all tests into one grader block).
 
-### Test 1 — JSON Parse Validity
-- Parses `sample["output_text"]` with `json.loads`.
+def parse_output_json(sample):
+    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+    try:
+        return json.loads(sample.get("output_text", ""))
+    except Exception:
+        return None
 
-### Test 2 — Root Object + Takeaways Array
-- Requires root dict and `takeaways` list.
 
-### Test 3 — Required Field Presence
-- Enforces required keys for each takeaway.
+def grade(sample, item):
+    """Return 1.0 when output is valid JSON; else 0.0."""
+    return 1.0 if parse_output_json(sample) is not None else 0.0
+```
 
-### Test 4 — Expected Dataset Configuration
-- Validates `expected_takeaway_count` and case-specific config fields.
+### Test 2 — Baseline takeaway container shape
+```python
+import json
 
-### Test 5 — Exact Takeaway Count Match
-- Requires `len(takeaways) == expected_takeaway_count`.
 
-### Test 6 — Page Range Format Validation
-- Requires `approx_page_range` to match `^p([0-9]+)-([0-9]+)$`.
+def parse_output_json(sample):
+    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+    try:
+        return json.loads(sample.get("output_text", ""))
+    except Exception:
+        return None
 
-### Test 7 — Hard Floor Rule
-- Isolates the immediate fail threshold (`{{HARD_FLOOR_RULE}}`).
 
-### Test 8 — Soft Quality Rule
-- Isolates aggregate quality threshold (often `>= 0.8 for N-1`, or case equivalent).
+def get_takeaways_array(obj):
+    """Return `takeaways` when root schema is valid; otherwise return None."""
+    if not isinstance(obj, dict):
+        return None
+    takeaways = obj.get("takeaways")
+    return takeaways if isinstance(takeaways, list) else None
 
----
 
-## 7) Recommended debug order
+def grade(sample, item):
+    """Return 1.0 when root object and takeaway array exist; else 0.0."""
+    obj = parse_output_json(sample)
+    if obj is None:
+        return 0.0
+    return 1.0 if get_takeaways_array(obj) is not None else 0.0
+```
 
-1. Test 1 — JSON Parse
-2. Test 2 — Root + list
-3. Test 3 — Required fields
-4. Test 4 — Dataset config
-5. Test 5 — Count match
-6. Test 6 — Range format
-7. Test 7 — Hard floor
-8. Test 8 — Soft quality
+### Test 3 — Case-specific constraints
+```python
+import json
 
-This order isolates syntax, schema, config, and case-logic failures progressively.
 
----
+def parse_output_json(sample):
+    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+    try:
+        return json.loads(sample.get("output_text", ""))
+    except Exception:
+        return None
 
-## 8) Case author checklist
 
-Before shipping a new case guide (example: A.7):
-- Replace all `{{PLACEHOLDERS}}`.
-- Keep system prompt consistent with Curator core unless capability changed.
-- Ensure dataset fields in section 3 exactly match code in section 5.
-- Verify debug tests cover every failure mode in the main grader.
-- Run all tests in OpenAI Evals Web UI and record pass/fail behavior.
+def validate_{{CASE_USECASE_NAME}}_constraints(takeaways, item):
+    """Validate {{CASE_ID}}-specific requirements; return True/False."""
+    # Implement case-specific checks here.
+    return True
+
+
+def grade(sample, item):
+    """Return 1.0 when {{CASE_ID}}-specific checks pass; else 0.0."""
+    obj = parse_output_json(sample)
+    if not isinstance(obj, dict) or not isinstance(obj.get("takeaways"), list):
+        return 0.0
+    return 1.0 if validate_{{CASE_USECASE_NAME}}_constraints(obj["takeaways"], item) else 0.0
+```
+
+## 6) Recommended debug order
+1. Test 1 (JSON parse)
+2. Test 2 (root + `takeaways` list)
+3. Test 3 (case-specific checks)
+
+## 7) Author checklist
+- Keep this exact section order.
+- Keep baseline helper names: `parse_output_json`, `get_takeaways_array`.
+- Use case-specific helper naming for non-baseline logic.
+- Add docstrings to every function.
+- Keep split debug tests minimal.
