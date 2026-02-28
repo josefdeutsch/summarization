@@ -1,13 +1,14 @@
 # Curator A.6 — Soft Cluster-Locality Grading Guide
 
 ## 1) Guide purpose
-This guide defines a **float-only Python grader** for case A.6. The objective is to validate that the model returns structured takeaways that are not only schema-valid, but also **locally coherent** in page-space. In plain terms: each takeaway should stay focused on one nearby region of the book and should not blend distant chapters into one claim.
+This guide defines a float-only grader for case A.6. It checks whether takeaway extraction stays **locally coherent**: each takeaway must be schema-valid, use one valid contiguous page range, and remain narrow enough to avoid blending distant parts of the book into one claim.
 
-This guide follows the same structure as the other Curator guides:
-1. Prompt package (system + user + inline dataset row).
-2. Runtime contract (`sample`, `item`, float return only).
-3. Main grader for final pass/fail.
-4. Minimal split debug tests (as little as possible, as much as necessary).
+A.6 focuses on retrieval discipline rather than prose quality. A pass means:
+- valid JSON output with required takeaway fields,
+- expected takeaway count,
+- valid page-range formatting,
+- per-takeaway locality (`span <= max_takeaway_span_pages`),
+- and soft cluster anchoring for most takeaways (`N-1` rule).
 
 ## 2) Prompt package
 
@@ -64,12 +65,11 @@ Extract exactly 8 information-rich takeaways from the book. Keep each takeaway l
 
 ## 3) Grader contract
 - Signature must be `def grade(sample, item):`.
-- Return float only: `1.0` (pass) or `0.0` (fail).
-- Read model output from `sample.get("output_text", "")`.
-- Parse using strict `json.loads`.
-- `item` is the dataset row for this run.
+- Return float only: `1.0` pass, `0.0` fail.
+- Parse model output from `sample.get("output_text", "")`.
+- `item` carries runtime thresholds and cluster zones.
 
-## 4) Main grader (A.6 cluster-locality)
+## 4) Main grader (A6_cluster_locality)
 ```python
 import json
 import re
@@ -78,107 +78,82 @@ RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when baseline schema checks and A.6 locality/cluster checks pass."""
+    output_text = sample.get("output_text", "")
+
     try:
-        return json.loads(sample.get("output_text", ""))
-    except Exception:
-        return None
-
-
-def get_takeaways_array(obj):
-    """Return `takeaways` when root schema is valid; otherwise return None."""
-    if not isinstance(obj, dict):
-        return None
-    takeaways = obj.get("takeaways")
-    return takeaways if isinstance(takeaways, list) else None
-
-
-def parse_page_range(range_text):
-    """Parse a `p<start>-<end>` string into `(start, end)` inclusive, normalized."""
-    if not isinstance(range_text, str):
-        return None
-    match = RANGE_RE.match(range_text)
-    if not match:
-        return None
-    a, b = int(match.group(1)), int(match.group(2))
-    return (min(a, b), max(a, b))
-
-
-def compute_overlap_ratio(span_start, span_end, zone_start, zone_end):
-    """Compute fraction of takeaway span that overlaps one target cluster zone."""
-    span_len = span_end - span_start + 1
-    inter = max(0, min(span_end, zone_end) - max(span_start, zone_start) + 1)
-    return inter / span_len
-
-
-def validate_cluster_locality_constraints(takeaways, item):
-    """Validate A.6-specific locality: count, narrow span, and optional cluster anchoring."""
-    try:
+        obj = json.loads(output_text)
         expected_n = int(item["expected_takeaway_count"])
         max_span = int(item["max_takeaway_span_pages"])
     except Exception:
-        return False
+        return 0.0
 
-    if expected_n < 1 or max_span < 1 or len(takeaways) != expected_n:
-        return False
+    if not isinstance(obj, dict):
+        return 0.0
+    takeaways = obj.get("takeaways")
+    if not isinstance(takeaways, list):
+        return 0.0
 
     cluster_ranges = item.get("required_cluster_ranges", [])
     if not isinstance(cluster_ranges, list):
-        return False
+        return 0.0
 
     normalized_clusters = []
     for zone in cluster_ranges:
         if not (isinstance(zone, list) and len(zone) == 2):
-            return False
+            return 0.0
         try:
             z1, z2 = int(zone[0]), int(zone[1])
         except Exception:
-            return False
+            return 0.0
         normalized_clusters.append((min(z1, z2), max(z1, z2)))
 
-    anchored = 0
-    for takeaway in takeaways:
-        if not isinstance(takeaway, dict):
-            return False
-        for key in REQUIRED_KEYS:
-            if key not in takeaway:
-                return False
+    if expected_n < 1 or max_span < 1:
+        return 0.0
+    if len(takeaways) != expected_n:
+        return 0.0
 
-        parsed = parse_page_range(takeaway.get("approx_page_range"))
-        if parsed is None:
-            return False
-        start, end = parsed
+    strong_anchors = 0
 
-        if (end - start + 1) > max_span:
-            return False
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+
+        rng = t.get("approx_page_range", "")
+        if not isinstance(rng, str):
+            return 0.0
+
+        m = RANGE_RE.match(rng)
+        if not m:
+            return 0.0
+
+        a_raw, b_raw = int(m.group(1)), int(m.group(2))
+        a, b = min(a_raw, b_raw), max(a_raw, b_raw)
+        span = b - a + 1
+        if span > max_span:
+            return 0.0
 
         if normalized_clusters:
-            best = 0.0
-            for zone_start, zone_end in normalized_clusters:
-                best = max(best, compute_overlap_ratio(start, end, zone_start, zone_end))
-            if best >= 0.80:
-                anchored += 1
+            best_ratio = 0.0
+            for s, e in normalized_clusters:
+                inter = max(0, min(b, e) - max(a, s) + 1)
+                ratio = inter / span
+                if ratio > best_ratio:
+                    best_ratio = ratio
+            if best_ratio >= 0.80:
+                strong_anchors += 1
 
     if normalized_clusters:
-        return anchored >= expected_n - 1
-    return True
+        return 1.0 if strong_anchors >= expected_n - 1 else 0.0
 
-
-def grade(sample, item):
-    """Return 1.0 when baseline schema checks and A.6 locality checks pass."""
-    obj = parse_output_json(sample)
-    if obj is None:
-        return 0.0
-
-    takeaways = get_takeaways_array(obj)
-    if takeaways is None:
-        return 0.0
-
-    return 1.0 if validate_cluster_locality_constraints(takeaways, item) else 0.0
+    return 1.0
 ```
 
-## 5) Split debug tests (minimal set)
+## 5) Split debug tests (manageable chunks)
 Run each test as a separate grader block in OpenAI Evals UI.
 
 ### Test 1 — Baseline JSON parse validity
@@ -186,49 +161,111 @@ Run each test as a separate grader block in OpenAI Evals UI.
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
-    try:
-        return json.loads(sample.get("output_text", ""))
-    except Exception:
-        return None
-
-
 def grade(sample, item):
-    """Return 1.0 when output is valid JSON; else 0.0."""
-    return 1.0 if parse_output_json(sample) is not None else 0.0
+    """Return 1.0 when output_text parses as JSON."""
+    try:
+        json.loads(sample.get("output_text", ""))
+        return 1.0
+    except Exception:
+        return 0.0
 ```
 
-### Test 2 — Baseline takeaway container shape
+### Test 2 — Baseline root object + takeaways array
 ```python
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when root is object and `takeaways` is a list."""
     try:
-        return json.loads(sample.get("output_text", ""))
+        obj = json.loads(sample.get("output_text", ""))
     except Exception:
-        return None
+        return 0.0
 
-
-def get_takeaways_array(obj):
-    """Return `takeaways` when root schema is valid; otherwise return None."""
     if not isinstance(obj, dict):
-        return None
-    takeaways = obj.get("takeaways")
-    return takeaways if isinstance(takeaways, list) else None
+        return 0.0
+    if not isinstance(obj.get("takeaways"), list):
+        return 0.0
+    return 1.0
+```
+
+### Test 3 — Baseline required takeaway fields
+```python
+import json
+
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
 def grade(sample, item):
-    """Return 1.0 when root object and takeaway array exist; else 0.0."""
-    obj = parse_output_json(sample)
-    if obj is None:
+    """Return 1.0 when every takeaway includes all required keys."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
         return 0.0
-    return 1.0 if get_takeaways_array(obj) is not None else 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+
+    return 1.0
 ```
 
-### Test 3 — A.6 locality constraints
+### Test 4 — Baseline dataset config validity
+```python
+
+def grade(sample, item):
+    """Return 1.0 when expected_n, max_span, and cluster config are valid."""
+    try:
+        expected_n = int(item["expected_takeaway_count"])
+        max_span = int(item["max_takeaway_span_pages"])
+        clusters = item.get("required_cluster_ranges", [])
+    except Exception:
+        return 0.0
+
+    if expected_n < 1 or max_span < 1:
+        return 0.0
+    if not isinstance(clusters, list):
+        return 0.0
+
+    for c in clusters:
+        if not (isinstance(c, list) and len(c) == 2):
+            return 0.0
+        try:
+            int(c[0]); int(c[1])
+        except Exception:
+            return 0.0
+
+    return 1.0
+```
+
+### Test 5 — Baseline exact takeaway count
+```python
+import json
+
+
+def grade(sample, item):
+    """Return 1.0 when takeaway count exactly matches expected_takeaway_count."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
+    except Exception:
+        return 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    return 1.0 if len(takeaways) == expected_n else 0.0
+```
+
+### Test 6 — Baseline page-range format validity
 ```python
 import json
 import re
@@ -236,75 +273,90 @@ import re
 RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when every `approx_page_range` matches p<start>-<end>."""
     try:
-        return json.loads(sample.get("output_text", ""))
+        obj = json.loads(sample.get("output_text", ""))
     except Exception:
-        return None
+        return 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    for t in takeaways:
+        rng = t.get("approx_page_range", "") if isinstance(t, dict) else ""
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
+
+    return 1.0
+```
+
+### Test 7 — A6_cluster_locality_span_and_anchor
+```python
+import json
+import re
+
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 
 
-def parse_page_range(range_text):
-    """Parse a `p<start>-<end>` string into `(start, end)` inclusive, normalized."""
-    if not isinstance(range_text, str):
-        return None
-    match = RANGE_RE.match(range_text)
-    if not match:
-        return None
-    a, b = int(match.group(1)), int(match.group(2))
-    return (min(a, b), max(a, b))
-
-
-def validate_cluster_locality_constraints(takeaways, item):
-    """Validate count, max span, and optional cluster anchoring for case A.6."""
+def grade(sample, item):
+    """Return 1.0 when each span is local and at least N-1 takeaways strongly anchor to cluster zones."""
     try:
+        obj = json.loads(sample.get("output_text", ""))
         expected_n = int(item["expected_takeaway_count"])
         max_span = int(item["max_takeaway_span_pages"])
+        clusters = item.get("required_cluster_ranges", [])
     except Exception:
-        return False
-    if len(takeaways) != expected_n:
-        return False
+        return 0.0
 
-    clusters = item.get("required_cluster_ranges", [])
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list) or len(takeaways) != expected_n:
+        return 0.0
     if not isinstance(clusters, list):
-        return False
+        return 0.0
 
     normalized = []
     for c in clusters:
         if not (isinstance(c, list) and len(c) == 2):
-            return False
-        normalized.append((min(int(c[0]), int(c[1])), max(int(c[0]), int(c[1]))))
+            return 0.0
+        try:
+            s, e = int(c[0]), int(c[1])
+        except Exception:
+            return 0.0
+        normalized.append((min(s, e), max(s, e)))
 
     anchored = 0
     for t in takeaways:
-        parsed = parse_page_range(t.get("approx_page_range") if isinstance(t, dict) else None)
-        if parsed is None:
-            return False
-        s, e = parsed
-        span = e - s + 1
+        rng = t.get("approx_page_range", "") if isinstance(t, dict) else ""
+        m = RANGE_RE.match(rng) if isinstance(rng, str) else None
+        if not m:
+            return 0.0
+
+        a_raw, b_raw = int(m.group(1)), int(m.group(2))
+        a, b = min(a_raw, b_raw), max(a_raw, b_raw)
+        span = b - a + 1
         if span > max_span:
-            return False
+            return 0.0
 
         if normalized:
             best = 0.0
-            for zs, ze in normalized:
-                inter = max(0, min(e, ze) - max(s, zs) + 1)
+            for s, e in normalized:
+                inter = max(0, min(b, e) - max(a, s) + 1)
                 best = max(best, inter / span)
             if best >= 0.80:
                 anchored += 1
 
-    return anchored >= expected_n - 1 if normalized else True
-
-
-def grade(sample, item):
-    """Return 1.0 when A.6-specific locality constraints pass; else 0.0."""
-    obj = parse_output_json(sample)
-    if not isinstance(obj, dict) or not isinstance(obj.get("takeaways"), list):
-        return 0.0
-    return 1.0 if validate_cluster_locality_constraints(obj["takeaways"], item) else 0.0
+    if normalized:
+        return 1.0 if anchored >= expected_n - 1 else 0.0
+    return 1.0
 ```
 
 ## 6) Recommended debug order
-1. Test 1 (JSON parse)
-2. Test 2 (root + `takeaways` list)
-3. Test 3 (A.6 locality)
+1. Test 1 — JSON parse
+2. Test 2 — root + takeaways list
+3. Test 3 — required fields
+4. Test 4 — dataset config
+5. Test 5 — exact count
+6. Test 6 — range format
+7. Test 7 — A6 locality span + anchoring

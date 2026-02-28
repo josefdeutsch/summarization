@@ -1,13 +1,14 @@
 # Curator A.7 — Non-triviality Filter Grading Guide
 
 ## 1) Guide purpose
-This guide defines a **float-only Python grader** for case A.7. The objective is to block low-information, motivational filler and require takeaways that are concrete, scoped, and mechanism-aware. A pass therefore means: valid structure, correct takeaway count, and claims that avoid banned generic phrasing while remaining specific enough to be useful.
+This guide defines a float-only grader for case A.7. It checks whether the model avoids motivational filler and returns **specific, mechanism-aware takeaways**. The intent is to reject outputs that are technically valid JSON but semantically generic.
 
-This guide follows the same structure as the other Curator guides:
-1. Prompt package (system + user + inline dataset row).
-2. Runtime contract (`sample`, `item`, float return only).
-3. Main grader for final pass/fail.
-4. Minimal split debug tests.
+A.7 passes only when output satisfies:
+- baseline JSON/schema checks,
+- exact takeaway count,
+- valid page-range format,
+- hard non-triviality floor (claim length + banned phrase filter),
+- and soft mechanism richness for most takeaways (`N-1` rule).
 
 ## 2) Prompt package
 
@@ -64,11 +65,11 @@ Extract exactly 8 information-rich takeaways from this mostly motivational/narra
 
 ## 3) Grader contract
 - Signature must be `def grade(sample, item):`.
-- Return float only: `1.0` (pass) or `0.0` (fail).
-- Parse model output from `sample.get("output_text", "")`.
-- `item` contains thresholds and banned/mechanism term lists.
+- Return float only: `1.0` pass, `0.0` fail.
+- Parse output from `sample.get("output_text", "")`.
+- Keep baseline checks generic and case checks use-case specific.
 
-## 4) Main grader (A.7 non-triviality)
+## 4) Main grader (A7_non_triviality_quality)
 ```python
 import json
 import re
@@ -77,99 +78,71 @@ RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
 REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when baseline schema checks and A.7 non-triviality checks pass."""
+    output_text = sample.get("output_text", "")
+
     try:
-        return json.loads(sample.get("output_text", ""))
-    except Exception:
-        return None
-
-
-def get_takeaways_array(obj):
-    """Return `takeaways` when root schema is valid; otherwise return None."""
-    if not isinstance(obj, dict):
-        return None
-    takeaways = obj.get("takeaways")
-    return takeaways if isinstance(takeaways, list) else None
-
-
-def has_range_format(range_text):
-    """Return True when range uses exact `p<start>-<end>` formatting."""
-    return isinstance(range_text, str) and RANGE_RE.match(range_text) is not None
-
-
-def contains_any_term(text, terms):
-    """Return True when any non-empty term appears in text (case-insensitive)."""
-    if not isinstance(text, str):
-        return False
-    lowered = text.lower()
-    for term in terms:
-        if isinstance(term, str) and term.strip() and term.lower() in lowered:
-            return True
-    return False
-
-
-def validate_non_triviality_constraints(takeaways, item):
-    """Validate A.7-specific quality constraints for claim richness and mechanism grounding."""
-    try:
+        obj = json.loads(output_text)
         expected_n = int(item["expected_takeaway_count"])
         min_claim_chars = int(item.get("min_claim_char_len", 90))
         min_scope_keywords = int(item.get("min_scope_keywords", 3))
     except Exception:
-        return False
+        return 0.0
+
+    if not isinstance(obj, dict):
+        return 0.0
+    takeaways = obj.get("takeaways")
+    if not isinstance(takeaways, list):
+        return 0.0
+    if len(takeaways) != expected_n:
+        return 0.0
 
     banned_phrases = item.get("banned_generic_phrases", [])
     mechanism_terms = item.get("mechanism_terms", [])
     if not isinstance(banned_phrases, list) or not isinstance(mechanism_terms, list):
-        return False
-
-    if len(takeaways) != expected_n:
-        return False
+        return 0.0
 
     strong_takeaways = 0
-    for takeaway in takeaways:
-        if not isinstance(takeaway, dict):
-            return False
-        for key in REQUIRED_KEYS:
-            if key not in takeaway:
-                return False
 
-        claim = takeaway.get("claim", "")
-        keywords = takeaway.get("scope_keywords", [])
-        page_range = takeaway.get("approx_page_range", "")
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+
+        claim = t.get("claim", "")
+        keywords = t.get("scope_keywords", [])
+        rng = t.get("approx_page_range", "")
 
         if not isinstance(claim, str) or len(claim.strip()) < min_claim_chars:
-            return False
+            return 0.0
         if not isinstance(keywords, list):
-            return False
-        if not has_range_format(page_range):
-            return False
+            return 0.0
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
 
+        claim_lower = claim.lower()
         for phrase in banned_phrases:
-            if isinstance(phrase, str) and phrase.strip() and phrase.lower() in claim.lower():
-                return False
+            if isinstance(phrase, str) and phrase.strip() and phrase.lower() in claim_lower:
+                return 0.0
 
-        mechanism_ok = True if not mechanism_terms else contains_any_term(claim, mechanism_terms)
+        mechanism_ok = True
+        if mechanism_terms:
+            mechanism_ok = False
+            for term in mechanism_terms:
+                if isinstance(term, str) and term.strip() and term.lower() in claim_lower:
+                    mechanism_ok = True
+                    break
+
         if len(keywords) >= min_scope_keywords and mechanism_ok:
             strong_takeaways += 1
 
-    return strong_takeaways >= expected_n - 1
-
-
-def grade(sample, item):
-    """Return 1.0 when baseline schema checks and A.7 non-triviality checks pass."""
-    obj = parse_output_json(sample)
-    if obj is None:
-        return 0.0
-
-    takeaways = get_takeaways_array(obj)
-    if takeaways is None:
-        return 0.0
-
-    return 1.0 if validate_non_triviality_constraints(takeaways, item) else 0.0
+    return 1.0 if strong_takeaways >= expected_n - 1 else 0.0
 ```
 
-## 5) Split debug tests (minimal set)
+## 5) Split debug tests (manageable chunks)
 Run each test as a separate grader block in OpenAI Evals UI.
 
 ### Test 1 — Baseline JSON parse validity
@@ -177,108 +150,197 @@ Run each test as a separate grader block in OpenAI Evals UI.
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
-    try:
-        return json.loads(sample.get("output_text", ""))
-    except Exception:
-        return None
-
-
 def grade(sample, item):
-    """Return 1.0 when output is valid JSON; else 0.0."""
-    return 1.0 if parse_output_json(sample) is not None else 0.0
-```
-
-### Test 2 — Baseline takeaway container shape
-```python
-import json
-
-
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+    """Return 1.0 when output_text parses as JSON."""
     try:
-        return json.loads(sample.get("output_text", ""))
+        json.loads(sample.get("output_text", ""))
+        return 1.0
     except Exception:
-        return None
-
-
-def get_takeaways_array(obj):
-    """Return `takeaways` when root schema is valid; otherwise return None."""
-    if not isinstance(obj, dict):
-        return None
-    takeaways = obj.get("takeaways")
-    return takeaways if isinstance(takeaways, list) else None
-
-
-def grade(sample, item):
-    """Return 1.0 when root object and takeaway array exist; else 0.0."""
-    obj = parse_output_json(sample)
-    if obj is None:
         return 0.0
-    return 1.0 if get_takeaways_array(obj) is not None else 0.0
 ```
 
-### Test 3 — A.7 non-triviality constraints
+### Test 2 — Baseline root object + takeaways array
 ```python
 import json
 
 
-def parse_output_json(sample):
-    """Parse `sample.output_text` into a Python object; return None on parse failure."""
+def grade(sample, item):
+    """Return 1.0 when root is object and `takeaways` is a list."""
     try:
-        return json.loads(sample.get("output_text", ""))
+        obj = json.loads(sample.get("output_text", ""))
     except Exception:
-        return None
+        return 0.0
+
+    if not isinstance(obj, dict):
+        return 0.0
+    if not isinstance(obj.get("takeaways"), list):
+        return 0.0
+    return 1.0
+```
+
+### Test 3 — Baseline required takeaway fields
+```python
+import json
+
+REQUIRED_KEYS = ["id", "title", "claim", "scope_keywords", "approx_page_range"]
 
 
-def contains_any_term(text, terms):
-    """Return True when any non-empty term appears in text (case-insensitive)."""
-    if not isinstance(text, str):
-        return False
-    lowered = text.lower()
-    for term in terms:
-        if isinstance(term, str) and term.strip() and term.lower() in lowered:
-            return True
-    return False
+def grade(sample, item):
+    """Return 1.0 when every takeaway includes all required keys."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+    except Exception:
+        return 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        for k in REQUIRED_KEYS:
+            if k not in t:
+                return 0.0
+
+    return 1.0
+```
+
+### Test 4 — Baseline dataset config validity
+```python
+
+def grade(sample, item):
+    """Return 1.0 when A.7 threshold/list config in dataset row is valid."""
+    try:
+        expected_n = int(item["expected_takeaway_count"])
+        min_claim_chars = int(item.get("min_claim_char_len", 90))
+        min_scope_keywords = int(item.get("min_scope_keywords", 3))
+        banned = item.get("banned_generic_phrases", [])
+        mech = item.get("mechanism_terms", [])
+    except Exception:
+        return 0.0
+
+    if expected_n < 1 or min_claim_chars < 20 or min_scope_keywords < 1:
+        return 0.0
+    if not isinstance(banned, list) or not isinstance(mech, list):
+        return 0.0
+    return 1.0
+```
+
+### Test 5 — Baseline exact takeaway count
+```python
+import json
 
 
-def validate_non_triviality_constraints(takeaways, item):
-    """Validate count, claim length, banned phrase filter, and mechanism softness for A.7."""
-    expected_n = int(item["expected_takeaway_count"])
-    min_claim_chars = int(item.get("min_claim_char_len", 90))
-    min_scope_keywords = int(item.get("min_scope_keywords", 3))
-    banned_phrases = item.get("banned_generic_phrases", [])
-    mechanism_terms = item.get("mechanism_terms", [])
+def grade(sample, item):
+    """Return 1.0 when takeaway count exactly matches expected_takeaway_count."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
+    except Exception:
+        return 0.0
 
-    if len(takeaways) != expected_n:
-        return False
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    return 1.0 if len(takeaways) == expected_n else 0.0
+```
+
+### Test 6 — A7_hard_non_triviality_floor
+```python
+import json
+import re
+
+RANGE_RE = re.compile(r"^p([0-9]+)-([0-9]+)$")
+
+
+def grade(sample, item):
+    """Return 1.0 when claims meet hard floor: length, no banned phrase, valid range format."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        min_claim_chars = int(item.get("min_claim_char_len", 90))
+        banned = item.get("banned_generic_phrases", [])
+    except Exception:
+        return 0.0
+
+    if not isinstance(banned, list):
+        return 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list):
+        return 0.0
+
+    for t in takeaways:
+        if not isinstance(t, dict):
+            return 0.0
+        claim = t.get("claim", "")
+        rng = t.get("approx_page_range", "")
+
+        if not isinstance(claim, str) or len(claim.strip()) < min_claim_chars:
+            return 0.0
+        if not isinstance(rng, str) or not RANGE_RE.match(rng):
+            return 0.0
+
+        cl = claim.lower()
+        for phrase in banned:
+            if isinstance(phrase, str) and phrase.strip() and phrase.lower() in cl:
+                return 0.0
+
+    return 1.0
+```
+
+### Test 7 — A7_soft_mechanism_specificity
+```python
+import json
+
+
+def grade(sample, item):
+    """Return 1.0 when at least N-1 takeaways are keyword-rich and mechanism-grounded."""
+    try:
+        obj = json.loads(sample.get("output_text", ""))
+        expected_n = int(item["expected_takeaway_count"])
+        min_scope_keywords = int(item.get("min_scope_keywords", 3))
+        mechanism_terms = item.get("mechanism_terms", [])
+    except Exception:
+        return 0.0
+
+    if not isinstance(mechanism_terms, list):
+        return 0.0
+
+    takeaways = obj.get("takeaways") if isinstance(obj, dict) else None
+    if not isinstance(takeaways, list) or len(takeaways) != expected_n:
+        return 0.0
 
     strong = 0
     for t in takeaways:
-        claim = t.get("claim", "") if isinstance(t, dict) else ""
-        keywords = t.get("scope_keywords", []) if isinstance(t, dict) else []
-        if not isinstance(claim, str) or len(claim.strip()) < min_claim_chars:
-            return False
-        for phrase in banned_phrases:
-            if isinstance(phrase, str) and phrase.strip() and phrase.lower() in claim.lower():
-                return False
-        mechanism_ok = True if not mechanism_terms else contains_any_term(claim, mechanism_terms)
-        if isinstance(keywords, list) and len(keywords) >= min_scope_keywords and mechanism_ok:
+        if not isinstance(t, dict):
+            return 0.0
+        claim = t.get("claim", "")
+        keywords = t.get("scope_keywords", [])
+        if not isinstance(claim, str) or not isinstance(keywords, list):
+            return 0.0
+
+        mechanism_ok = True
+        if mechanism_terms:
+            mechanism_ok = False
+            cl = claim.lower()
+            for term in mechanism_terms:
+                if isinstance(term, str) and term.strip() and term.lower() in cl:
+                    mechanism_ok = True
+                    break
+
+        if len(keywords) >= min_scope_keywords and mechanism_ok:
             strong += 1
 
-    return strong >= expected_n - 1
-
-
-def grade(sample, item):
-    """Return 1.0 when A.7-specific non-triviality checks pass; else 0.0."""
-    obj = parse_output_json(sample)
-    if not isinstance(obj, dict) or not isinstance(obj.get("takeaways"), list):
-        return 0.0
-    return 1.0 if validate_non_triviality_constraints(obj["takeaways"], item) else 0.0
+    return 1.0 if strong >= expected_n - 1 else 0.0
 ```
 
 ## 6) Recommended debug order
-1. Test 1 (JSON parse)
-2. Test 2 (root + `takeaways` list)
-3. Test 3 (A.7 non-triviality)
+1. Test 1 — JSON parse
+2. Test 2 — root + takeaways list
+3. Test 3 — required fields
+4. Test 4 — dataset config
+5. Test 5 — exact count
+6. Test 6 — hard non-triviality floor
+7. Test 7 — soft mechanism specificity
