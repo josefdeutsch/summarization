@@ -1,6 +1,12 @@
 from fastapi import FastAPI
+from pydantic import BaseModel, Field
 
 app = FastAPI()
+
+
+class RunCuratorRequest(BaseModel):
+    text: str
+    takeaway_count: int = Field(gt=0)
 
 
 @app.get('/health')
@@ -9,8 +15,8 @@ def health() -> dict[str, str]:
 
 
 @app.post('/run-curator')
-def run_curator() -> dict[str, object]:
+def run_curator(payload: RunCuratorRequest) -> dict[str, object]:
     return {
-        'status': 'accepted',
-        'message': 'Mock curator workflow response',
+        'status': 'received',
+        'takeaway_count': payload.takeaway_count,
     }
