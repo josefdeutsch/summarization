@@ -1,0 +1,47 @@
+Grader order should mirror system fragility:
+
+Structure
+
+Constraints
+
+Clustering
+
+Intellectual quality
+
+Stability
+
+Never judge quality before structure.
+
+
+
+### System Message vs User Message — Best Practice in OpenAI Evals
+
+**System Message**
+
+* Defines the agent’s permanent role.
+* Contains rules, constraints, and output contract.
+* Should not change across test cases.
+* Should not contain task-specific instructions.
+* Acts as the architectural “contract.”
+
+**User Message**
+
+* Defines the specific task instance.
+* Varies across eval cases.
+* Controls scope (e.g., chapter, page band, full book).
+* Is what you manipulate in TDD-style testing.
+
+---
+
+### Best Practice Principle
+
+Keep the **system message stable and minimal**.
+Vary the **user message to test behavior**.
+
+This gives you:
+
+* Clean separation of concerns
+* Better interpretability of failures
+* Easier regression testing
+* Scalable multi-agent design
+
