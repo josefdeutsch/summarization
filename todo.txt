@@ -1,1 +1,0 @@
-The Builder Agent must query by page range, decided by curator !and/or by title. 
